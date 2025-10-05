@@ -1,0 +1,126 @@
+// prisma/schema.prisma
+// قاعدة البيانات: PostgreSQL، الموصل: Prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+// تحديد مصدر البيانات PostgreSQL
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------
+// 1. الدور (Role)
+// ----------------------------------------------------
+enum UserRole {
+  ELDER    // المسن (المريض)
+  CAREGIVER // المرافق / مقدم الرعاية
+  ADMIN    // المسؤول
+}
+
+// ----------------------------------------------------
+// 2. جدول المستخدمين (User)
+// ----------------------------------------------------
+model User {
+  user_id        String    @id @default(uuid())
+  email          String    @unique // البريد الإلكتروني معرّف فريد
+  password_hash  String    // تشفير bcrypt لكلمة المرور
+  full_name      String
+  phone_number   String?
+  role           UserRole  // الدور (ELDER, CAREGIVER, ADMIN)
+  
+  // العلاقات (Relations)
+  // العلاقة 1:1: المستخدم (إذا كان مسناً) يملك تفاصيل Elder_Details واحدة
+  elder_details  Elder_Details? @relation("ElderDetails") 
+  
+  // العلاقة 1:M: المرافق يمكن أن يرعى عدة مسنين
+  cared_for      Elder_Details[] @relation("CaregiverToElder") 
+  
+  sos_alerts     SOS_Alerts[] // التنبيهات التي أصدرها/تلقاها المستخدم
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+// ----------------------------------------------------
+// 3. تفاصيل المسن (Elder_Details)
+// ----------------------------------------------------
+model Elder_Details {
+  elder_id       String    @id @default(uuid())
+
+
+   // [التعديل الحرج]: كود ربط سري عشوائي (مثل: 6 أحرف)
+  pairing_code   String    @unique 
+  
+  
+  // Foreign Key: ربط تفاصيل المسن بحساب المستخدم الأساسي
+  user_id        String    @unique 
+  // Foreign Key: ربط المسن بالمرافق المسؤول عنه
+  caregiver_id   String?   
+  
+  date_of_birth  DateTime?
+  medical_history String?
+  
+  // تعريف العلاقة 1:1: يربط هذا السجل بـ User الذي يمثله
+  user           User      @relation("ElderDetails", fields: [user_id], references: [user_id])
+  
+  // تعريف العلاقة M:1: يربط هذا السجل بـ Caregiver (المرافق)
+  caregiver      User?     @relation("CaregiverToElder", fields: [caregiver_id], references: [user_id])
+  
+  // علاقات 1:M مع الجداول الفرعية
+  readings       Reading[]
+  medications    Medication[]
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+// ----------------------------------------------------
+// 4. قراءات Vital Signs (Reading)
+// ----------------------------------------------------
+model Reading {
+  reading_id     String   @id @default(uuid())
+  elder_id       String   // Foreign Key إلى جدول Elder_Details
+  reading_type   String
+  value          Float
+  unit           String
+  
+  elder          Elder_Details @relation(fields: [elder_id], references: [elder_id])
+
+  timestamp      DateTime @default(now())
+}
+
+// ----------------------------------------------------
+// 5. الأدوية المجدولة (Medication)
+// ----------------------------------------------------
+model Medication {
+  medication_id  String   @id @default(uuid())
+  elder_id       String   // Foreign Key إلى جدول Elder_Details
+  med_name       String
+  dosage         String
+  schedule       String
+  
+  elder          Elder_Details @relation(fields: [elder_id], references: [elder_id])
+  
+  is_active      Boolean @default(true)
+  
+  createdAt      DateTime @default(now())
+}
+
+// ----------------------------------------------------
+// 6. تنبيهات SOS (SOS_Alerts)
+// ----------------------------------------------------
+model SOS_Alerts {
+  alert_id       String    @id @default(uuid())
+  issuer_id      String    // Foreign Key: من قام بإصدار التنبيه
+  alert_type     String
+  status         String    @default("PENDING") 
+  
+  issuer         User      @relation(fields: [issuer_id], references: [user_id])
+  
+  latitude       Float?
+  longitude      Float?
+  
+  createdAt      DateTime  @default(now())
+}
